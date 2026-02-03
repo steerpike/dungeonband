@@ -1,5 +1,5 @@
 # Binaries
-dungeonband
+/dungeonband
 
 # Environment files with secrets
 .env
