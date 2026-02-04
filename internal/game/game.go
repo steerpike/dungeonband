@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/samdwyer/dungeonband/internal/combat"
 	"github.com/samdwyer/dungeonband/internal/entity"
 	"github.com/samdwyer/dungeonband/internal/gamedata"
 	"github.com/samdwyer/dungeonband/internal/telemetry"
@@ -17,16 +18,23 @@ import (
 
 // Game holds the entire game state.
 type Game struct {
-	screen        *ui.Screen
-	renderer      *ui.Renderer
-	dungeon       *world.Dungeon
-	party         *entity.Party
-	enemies       []*entity.Enemy
-	enemyRegistry *gamedata.EnemyRegistry
-	state         State
-	running       bool
-	rng           *rand.Rand
-	seed          int64
+	screen          *ui.Screen
+	renderer        *ui.Renderer
+	dungeon         *world.Dungeon
+	party           *entity.Party
+	enemies         []*entity.Enemy
+	enemyRegistry   *gamedata.EnemyRegistry
+	classRegistry   *gamedata.ClassRegistry
+	abilityRegistry *gamedata.AbilityRegistry
+	effectResolver  *combat.EffectResolver
+	state           State
+	running         bool
+	rng             *rand.Rand
+	seed            int64
+
+	// Combat state
+	combatEnemies     []*entity.Enemy // Enemies in the current combat encounter
+	activeMemberIndex int             // Index of the party member whose turn it is
 }
 
 // New creates a new game instance with the given configuration.
@@ -37,19 +45,39 @@ func New(cfg Config) (*Game, error) {
 	}
 
 	// Load enemy registry from embedded data
-	registry, err := gamedata.LoadEnemyRegistry()
+	enemyRegistry, err := gamedata.LoadEnemyRegistry()
 	if err != nil {
 		log.Printf("Warning: failed to load enemy registry: %v (using legacy spawning)", err)
 	}
 
+	// Load class registry
+	classRegistry, err := gamedata.LoadClassRegistry()
+	if err != nil {
+		log.Printf("Warning: failed to load class registry: %v (using default stats)", err)
+	}
+
+	// Load ability registry
+	abilityRegistry, err := gamedata.LoadAbilityRegistry()
+	if err != nil {
+		log.Printf("Warning: failed to load ability registry: %v", err)
+	}
+
+	var effectResolver *combat.EffectResolver
+	if abilityRegistry != nil {
+		effectResolver = combat.NewEffectResolver(abilityRegistry)
+	}
+
 	return &Game{
-		screen:        screen,
-		renderer:      ui.NewRenderer(screen),
-		enemyRegistry: registry,
-		state:         StateExplore,
-		running:       true,
-		rng:           rand.New(rand.NewSource(cfg.Seed)),
-		seed:          cfg.Seed,
+		screen:          screen,
+		renderer:        ui.NewRenderer(screen),
+		enemyRegistry:   enemyRegistry,
+		classRegistry:   classRegistry,
+		abilityRegistry: abilityRegistry,
+		effectResolver:  effectResolver,
+		state:           StateExplore,
+		running:         true,
+		rng:             rand.New(rand.NewSource(cfg.Seed)),
+		seed:            cfg.Seed,
 	}, nil
 }
 
@@ -67,7 +95,13 @@ func (g *Game) Run(ctx context.Context) error {
 	// Place party in first room's center
 	if len(g.dungeon.Rooms) > 0 {
 		startX, startY := g.dungeon.Rooms[0].Center()
-		g.party = entity.NewParty(startX, startY)
+
+		// Create party with class data if available
+		if g.classRegistry != nil {
+			g.party = entity.NewPartyWithClassData(startX, startY, g.classRegistry)
+		} else {
+			g.party = entity.NewParty(startX, startY)
+		}
 
 		// Spawn enemies in rooms (skip room 0 - starting room)
 		g.spawnEnemies()
@@ -81,7 +115,11 @@ func (g *Game) Run(ctx context.Context) error {
 		)
 	} else {
 		// Fallback: place in center of map
-		g.party = entity.NewParty(g.dungeon.Width/2, g.dungeon.Height/2)
+		if g.classRegistry != nil {
+			g.party = entity.NewPartyWithClassData(g.dungeon.Width/2, g.dungeon.Height/2, g.classRegistry)
+		} else {
+			g.party = entity.NewParty(g.dungeon.Width/2, g.dungeon.Height/2)
+		}
 		initSpan.SetAttributes(
 			attribute.Int("dungeon.rooms", 0),
 			attribute.String("warning", "no rooms generated, using fallback position"),
@@ -95,7 +133,12 @@ func (g *Game) Run(ctx context.Context) error {
 	// Main game loop
 	for g.running {
 		// Render current state
-		g.renderer.Render(g.dungeon, g.party, g.enemies, ui.GameState(g.state), g.seed)
+		if g.state == StateCombat {
+			combatInfo := g.buildCombatInfo()
+			g.renderer.RenderWithCombat(g.dungeon, g.party, g.enemies, ui.GameState(g.state), g.seed, combatInfo)
+		} else {
+			g.renderer.Render(g.dungeon, g.party, g.enemies, ui.GameState(g.state), g.seed)
+		}
 
 		// Handle input (blocking)
 		g.handleInput(ctx)
@@ -151,7 +194,15 @@ func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 		}
 
 	case tcell.KeyRune:
-		switch ev.Rune() {
+		r := ev.Rune()
+
+		// Handle number keys for ability selection in combat
+		if g.state == StateCombat && r >= '1' && r <= '9' {
+			g.handleCombatAbilitySelection(ctx, int(r-'1'))
+			return
+		}
+
+		switch r {
 		case 'q', 'Q':
 			g.running = false
 		case 'c', 'C':
@@ -176,6 +227,45 @@ func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 			}
 		}
 	}
+}
+
+// handleCombatAbilitySelection handles when player presses a number key in combat.
+func (g *Game) handleCombatAbilitySelection(ctx context.Context, abilityIndex int) {
+	activeMember := g.getActiveMember()
+	if activeMember == nil || g.abilityRegistry == nil {
+		return
+	}
+
+	abilityIDs := activeMember.GetAbilityIDs()
+	if abilityIndex >= len(abilityIDs) {
+		return // Invalid selection
+	}
+
+	ability := g.abilityRegistry.GetByID(abilityIDs[abilityIndex])
+	if ability == nil {
+		return
+	}
+
+	// Check if can use (enough MP)
+	if activeMember.GetMP() < ability.MPCost {
+		return // Not enough MP
+	}
+
+	// For now, auto-target the first alive enemy for offensive abilities
+	// Target selection UI will be added in a future issue
+	if ability.IsOffensive() && len(g.combatEnemies) > 0 {
+		for _, enemy := range g.combatEnemies {
+			if enemy.IsAlive() {
+				// This is just ability selection for now
+				// Actual resolution will happen in the combat loop issue
+				_ = enemy // Placeholder - combat loop will handle this
+				break
+			}
+		}
+	}
+
+	// Log the selection for now (actual combat will be implemented in dungeonband-79f)
+	// TODO: Store selected ability and trigger combat resolution
 }
 
 // tryMove attempts to move the party by the given delta.
@@ -210,7 +300,69 @@ func (g *Game) transitionState(ctx context.Context, newState State, trigger stri
 	)
 	span.End()
 
+	// Handle state-specific setup
+	if newState == StateCombat {
+		g.enterCombat()
+	} else if g.state == StateCombat {
+		g.exitCombat()
+	}
+
 	g.state = newState
+}
+
+// enterCombat sets up combat state.
+func (g *Game) enterCombat() {
+	// Find enemies in the same room as the party
+	partyRoomIndex := g.dungeon.RoomIndexAt(g.party.X, g.party.Y)
+	g.combatEnemies = nil
+	for _, enemy := range g.enemies {
+		if enemy.RoomIndex == partyRoomIndex && enemy.IsAlive() {
+			g.combatEnemies = append(g.combatEnemies, enemy)
+		}
+	}
+	g.activeMemberIndex = 0
+}
+
+// exitCombat cleans up combat state.
+func (g *Game) exitCombat() {
+	g.combatEnemies = nil
+	g.activeMemberIndex = 0
+}
+
+// getActiveMember returns the current active party member in combat.
+func (g *Game) getActiveMember() *entity.Member {
+	return g.party.GetAliveMember(g.activeMemberIndex)
+}
+
+// buildCombatInfo creates the combat UI information for rendering.
+func (g *Game) buildCombatInfo() *ui.CombatInfo {
+	activeMember := g.getActiveMember()
+	if activeMember == nil {
+		return nil
+	}
+
+	// Build ability info list
+	var abilities []ui.AbilityInfo
+	if g.abilityRegistry != nil {
+		for _, abilityID := range activeMember.GetAbilityIDs() {
+			abilityDef := g.abilityRegistry.GetByID(abilityID)
+			if abilityDef != nil {
+				canUse := activeMember.GetMP() >= abilityDef.MPCost
+				abilities = append(abilities, ui.AbilityInfo{
+					Name:   abilityDef.Name,
+					MPCost: abilityDef.MPCost,
+					CanUse: canUse,
+				})
+			}
+		}
+	}
+
+	return &ui.CombatInfo{
+		ActiveMember: activeMember,
+		Abilities:    abilities,
+		Enemies:      g.combatEnemies,
+		Message:      "", // Can be populated with combat messages later
+	}
 }
 
 // spawnEnemies populates the dungeon with enemies.

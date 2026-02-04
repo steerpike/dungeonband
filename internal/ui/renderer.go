@@ -17,6 +17,21 @@ const (
 	StateCombat
 )
 
+// AbilityInfo holds display information for an ability in the combat UI.
+type AbilityInfo struct {
+	Name   string
+	MPCost int
+	CanUse bool // false if not enough MP
+}
+
+// CombatInfo holds all information needed to render the combat UI.
+type CombatInfo struct {
+	ActiveMember *entity.Member  // The party member whose turn it is
+	Abilities    []AbilityInfo   // Available abilities for the active member
+	Enemies      []*entity.Enemy // Enemies in combat
+	Message      string          // Current combat message
+}
+
 // Renderer handles drawing the game to the screen.
 type Renderer struct {
 	screen *Screen
@@ -29,6 +44,11 @@ func NewRenderer(screen *Screen) *Renderer {
 
 // Render draws the dungeon and party to the screen based on game state.
 func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies []*entity.Enemy, state GameState, seed int64) {
+	r.RenderWithCombat(dungeon, party, enemies, state, seed, nil)
+}
+
+// RenderWithCombat draws the game with optional combat UI information.
+func (r *Renderer) RenderWithCombat(dungeon *world.Dungeon, party *entity.Party, enemies []*entity.Enemy, state GameState, seed int64, combatInfo *CombatInfo) {
 	r.screen.Clear()
 
 	// Determine which room the party is in (for visibility)
@@ -48,7 +68,7 @@ func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies [
 
 	// Draw party based on state
 	if state == StateCombat {
-		r.renderCombatFormation(dungeon, party)
+		r.renderCombatFormation(dungeon, party, combatInfo)
 	} else {
 		r.renderExploreParty(party)
 	}
@@ -58,6 +78,11 @@ func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies [
 
 	// Draw seed in top-right
 	r.renderSeed(dungeon.Width, seed)
+
+	// Draw combat UI panel if in combat
+	if state == StateCombat && combatInfo != nil {
+		r.renderCombatUI(dungeon.Height, combatInfo)
+	}
 
 	r.screen.Show()
 }
@@ -71,7 +96,7 @@ func (r *Renderer) renderExploreParty(party *entity.Party) {
 }
 
 // renderCombatFormation draws individual party members spread on tiles.
-func (r *Renderer) renderCombatFormation(dungeon *world.Dungeon, party *entity.Party) {
+func (r *Renderer) renderCombatFormation(dungeon *world.Dungeon, party *entity.Party, combatInfo *CombatInfo) {
 	// Find valid positions for formation around party position
 	positions := r.findFormationPositions(dungeon, party.X, party.Y, len(party.Members))
 
@@ -81,6 +106,17 @@ func (r *Renderer) renderCombatFormation(dungeon *world.Dungeon, party *entity.P
 			pos := positions[i]
 			member.SetPosition(pos.x, pos.y)
 			style := r.getMemberStyle(member.Class)
+
+			// Highlight active member
+			if combatInfo != nil && combatInfo.ActiveMember == member {
+				style = style.Background(tcell.ColorDarkBlue)
+			}
+
+			// Dim dead members
+			if !member.IsAlive() {
+				style = tcell.StyleDefault.Foreground(tcell.ColorDarkGray)
+			}
+
 			r.screen.SetContent(pos.x, pos.y, member.Symbol, style)
 		}
 	}
@@ -237,5 +273,76 @@ func (r *Renderer) renderEnemies(enemies []*entity.Enemy, partyRoomIndex int) {
 			style := tcell.StyleDefault.Foreground(enemy.Color())
 			r.screen.SetContent(enemy.X, enemy.Y, enemy.Symbol, style)
 		}
+	}
+}
+
+// renderCombatUI draws the combat UI panel below the dungeon.
+func (r *Renderer) renderCombatUI(startY int, info *CombatInfo) {
+	if info == nil || info.ActiveMember == nil {
+		return
+	}
+
+	y := startY + 1
+
+	// Draw active member info
+	memberLine := fmt.Sprintf("%s's turn | HP: %d/%d | MP: %d/%d",
+		info.ActiveMember.Name,
+		info.ActiveMember.HP, info.ActiveMember.MaxHP,
+		info.ActiveMember.MP, info.ActiveMember.MaxMP,
+	)
+	r.renderText(0, y, memberLine, tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true))
+	y++
+
+	// Draw separator
+	r.renderText(0, y, "--- Abilities (press 1-9 to select) ---", tcell.StyleDefault.Foreground(tcell.ColorGray))
+	y++
+
+	// Draw abilities
+	for i, ability := range info.Abilities {
+		if i >= 9 {
+			break // Only show first 9 abilities
+		}
+
+		var line string
+		if ability.MPCost > 0 {
+			line = fmt.Sprintf("[%d] %s (%d MP)", i+1, ability.Name, ability.MPCost)
+		} else {
+			line = fmt.Sprintf("[%d] %s", i+1, ability.Name)
+		}
+
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		if !ability.CanUse {
+			style = tcell.StyleDefault.Foreground(tcell.ColorDarkGray)
+		}
+		r.renderText(0, y, line, style)
+		y++
+	}
+
+	y++
+
+	// Draw enemies in combat
+	if len(info.Enemies) > 0 {
+		r.renderText(0, y, "--- Enemies ---", tcell.StyleDefault.Foreground(tcell.ColorGray))
+		y++
+		for _, enemy := range info.Enemies {
+			if enemy.IsAlive() {
+				enemyLine := fmt.Sprintf("%s HP: %d/%d", enemy.Name, enemy.HP, enemy.MaxHP)
+				r.renderText(0, y, enemyLine, tcell.StyleDefault.Foreground(enemy.Color()))
+				y++
+			}
+		}
+	}
+
+	// Draw combat message
+	if info.Message != "" {
+		y++
+		r.renderText(0, y, info.Message, tcell.StyleDefault.Foreground(tcell.ColorAqua))
+	}
+}
+
+// renderText draws a string at the given position.
+func (r *Renderer) renderText(x, y int, text string, style tcell.Style) {
+	for i, ch := range text {
+		r.screen.SetContent(x+i, y, ch, style)
 	}
 }
