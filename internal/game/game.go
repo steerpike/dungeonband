@@ -72,7 +72,7 @@ func (g *Game) Run(ctx context.Context) error {
 	// Main game loop
 	for g.running {
 		// Render current state
-		g.renderer.Render(g.dungeon, g.party)
+		g.renderer.Render(g.dungeon, g.party, ui.GameState(g.state))
 
 		// Handle input (blocking)
 		g.handleInput(ctx)
@@ -98,23 +98,59 @@ func (g *Game) handleInput(ctx context.Context) {
 // handleKeyEvent processes keyboard input.
 func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyCtrlC:
+	case tcell.KeyEscape:
+		if g.state == StateCombat {
+			// Exit combat mode
+			g.transitionState(ctx, StateExplore, "manual")
+		} else {
+			// Quit game from explore mode
+			g.running = false
+		}
+
+	case tcell.KeyCtrlC:
 		g.running = false
 
 	case tcell.KeyUp:
-		g.tryMove(ctx, 0, -1)
+		if g.state == StateExplore {
+			g.tryMove(ctx, 0, -1)
+		}
 	case tcell.KeyDown:
-		g.tryMove(ctx, 0, 1)
+		if g.state == StateExplore {
+			g.tryMove(ctx, 0, 1)
+		}
 	case tcell.KeyLeft:
-		g.tryMove(ctx, -1, 0)
+		if g.state == StateExplore {
+			g.tryMove(ctx, -1, 0)
+		}
 	case tcell.KeyRight:
-		g.tryMove(ctx, 1, 0)
+		if g.state == StateExplore {
+			g.tryMove(ctx, 1, 0)
+		}
 
 	case tcell.KeyRune:
-		// Handle character keys if needed in future
 		switch ev.Rune() {
 		case 'q', 'Q':
 			g.running = false
+		case 'c', 'C':
+			if g.state == StateExplore {
+				g.transitionState(ctx, StateCombat, "manual")
+			}
+		case 'h':
+			if g.state == StateExplore {
+				g.tryMove(ctx, -1, 0)
+			}
+		case 'j':
+			if g.state == StateExplore {
+				g.tryMove(ctx, 0, 1)
+			}
+		case 'k':
+			if g.state == StateExplore {
+				g.tryMove(ctx, 0, -1)
+			}
+		case 'l':
+			if g.state == StateExplore {
+				g.tryMove(ctx, 1, 0)
+			}
 		}
 	}
 }
@@ -134,4 +170,22 @@ func (g *Game) Close() {
 	if g.screen != nil {
 		g.screen.Close()
 	}
+}
+
+// transitionState changes the game state and records telemetry.
+func (g *Game) transitionState(ctx context.Context, newState State, trigger string) {
+	if g.state == newState {
+		return // No change
+	}
+
+	tracer := telemetry.Tracer("game")
+	_, span := tracer.Start(ctx, "game.state_change")
+	span.SetAttributes(
+		attribute.String("from_state", g.state.String()),
+		attribute.String("to_state", newState.String()),
+		attribute.String("trigger", trigger),
+	)
+	span.End()
+
+	g.state = newState
 }
