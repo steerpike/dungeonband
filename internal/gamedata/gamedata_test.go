@@ -1,4 +1,4 @@
-package data
+package gamedata
 
 import (
 	"math/rand"

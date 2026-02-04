@@ -4,7 +4,7 @@ package entity
 import (
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/samdwyer/dungeonband/data"
+	"github.com/samdwyer/dungeonband/internal/gamedata"
 )
 
 // EnemyType represents a type of enemy.
@@ -47,14 +47,14 @@ func (t EnemyType) Symbol() rune {
 
 // Enemy represents a hostile creature in the dungeon.
 type Enemy struct {
-	Def       *data.EnemyDef // Reference to the enemy definition (nil for legacy enemies)
-	Name      string         // Enemy name (e.g., "Goblin Scout")
-	Type      EnemyType      // Type of enemy (deprecated, use Def)
-	Symbol    rune           // Display symbol
-	X, Y      int            // Position in the dungeon
-	RoomIndex int            // Index of the room this enemy is in (-1 if not in a room)
-	HP        int            // Current hit points
-	MaxHP     int            // Maximum hit points
+	Def       *gamedata.EnemyDef // Reference to the enemy definition (nil for legacy enemies)
+	Name      string             // Enemy name (e.g., "Goblin Scout")
+	Type      EnemyType          // Type of enemy (deprecated, use Def)
+	Symbol    rune               // Display symbol
+	X, Y      int                // Position in the dungeon
+	RoomIndex int                // Index of the room this enemy is in (-1 if not in a room)
+	HP        int                // Current hit points
+	MaxHP     int                // Maximum hit points
 }
 
 // NewEnemy creates a new enemy of the given type at the specified position.
@@ -73,7 +73,7 @@ func NewEnemy(enemyType EnemyType, x, y, roomIndex int) *Enemy {
 }
 
 // NewEnemyFromDef creates a new enemy from a data-driven definition.
-func NewEnemyFromDef(def *data.EnemyDef, x, y, roomIndex int) *Enemy {
+func NewEnemyFromDef(def *gamedata.EnemyDef, x, y, roomIndex int) *Enemy {
 	return &Enemy{
 		Def:       def,
 		Name:      def.Name,

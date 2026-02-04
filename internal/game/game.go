@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/samdwyer/dungeonband/data"
 	"github.com/samdwyer/dungeonband/internal/entity"
+	"github.com/samdwyer/dungeonband/internal/gamedata"
 	"github.com/samdwyer/dungeonband/internal/telemetry"
 	"github.com/samdwyer/dungeonband/internal/ui"
 	"github.com/samdwyer/dungeonband/internal/world"
@@ -22,7 +22,7 @@ type Game struct {
 	dungeon       *world.Dungeon
 	party         *entity.Party
 	enemies       []*entity.Enemy
-	enemyRegistry *data.EnemyRegistry
+	enemyRegistry *gamedata.EnemyRegistry
 	state         State
 	running       bool
 	rng           *rand.Rand
@@ -37,7 +37,7 @@ func New(cfg Config) (*Game, error) {
 	}
 
 	// Load enemy registry from embedded data
-	registry, err := data.LoadEnemyRegistry()
+	registry, err := gamedata.LoadEnemyRegistry()
 	if err != nil {
 		log.Printf("Warning: failed to load enemy registry: %v (using legacy spawning)", err)
 	}
