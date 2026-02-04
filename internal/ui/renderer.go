@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/samdwyer/dungeonband/internal/entity"
@@ -26,7 +28,7 @@ func NewRenderer(screen *Screen) *Renderer {
 }
 
 // Render draws the dungeon and party to the screen based on game state.
-func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies []*entity.Enemy, state GameState) {
+func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies []*entity.Enemy, state GameState, seed int64) {
 	r.screen.Clear()
 
 	// Determine which room the party is in (for visibility)
@@ -53,6 +55,9 @@ func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies [
 
 	// Draw state indicator in top-left
 	r.renderStateIndicator(state)
+
+	// Draw seed in top-right
+	r.renderSeed(dungeon.Width, seed)
 
 	r.screen.Show()
 }
@@ -187,6 +192,22 @@ func (r *Renderer) renderStateIndicator(state GameState) {
 	}
 }
 
+// renderSeed draws the seed value in the top-right corner.
+func (r *Renderer) renderSeed(screenWidth int, seed int64) {
+	text := fmt.Sprintf("Seed:%d", seed)
+	style := tcell.StyleDefault.Foreground(tcell.ColorDarkGray)
+
+	// Position at top-right
+	startX := screenWidth - len(text)
+	if startX < 0 {
+		startX = 0
+	}
+
+	for i, ch := range text {
+		r.screen.SetContent(startX+i, 0, ch, style)
+	}
+}
+
 // getTileStyle returns the appropriate style for a tile type.
 func (r *Renderer) getTileStyle(tile world.Tile) tcell.Style {
 	switch tile {
@@ -213,22 +234,8 @@ func (r *Renderer) renderEnemies(enemies []*entity.Enemy, partyRoomIndex int) {
 	for _, enemy := range enemies {
 		// Only show enemies in the same room as the party
 		if enemy.RoomIndex == partyRoomIndex && partyRoomIndex >= 0 {
-			style := r.getEnemyStyle(enemy.Type)
+			style := tcell.StyleDefault.Foreground(enemy.Color())
 			r.screen.SetContent(enemy.X, enemy.Y, enemy.Symbol, style)
 		}
-	}
-}
-
-// getEnemyStyle returns the style for an enemy based on type.
-func (r *Renderer) getEnemyStyle(enemyType entity.EnemyType) tcell.Style {
-	switch enemyType {
-	case entity.EnemyGoblin:
-		return tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	case entity.EnemyOrc:
-		return tcell.StyleDefault.Foreground(tcell.ColorRed)
-	case entity.EnemySkeleton:
-		return tcell.StyleDefault.Foreground(tcell.ColorWhite)
-	default:
-		return tcell.StyleDefault.Foreground(tcell.ColorPurple)
 	}
 }

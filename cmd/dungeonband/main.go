@@ -3,9 +3,12 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -14,12 +17,19 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	seedFlag := flag.Int64("seed", 0, "Random seed for reproducible dungeon generation (0 = auto)")
+	flag.Parse()
+
 	// Load .env file for local development
 	// This makes HONEYCOMB_DUNGEONBAND_API_KEY available
 	if err := godotenv.Load(); err != nil {
 		// Not fatal - env vars might be set directly
 		log.Printf("Note: .env file not loaded: %v", err)
 	}
+
+	// Determine seed: CLI flag > env var > random
+	seed := determineSeed(*seedFlag)
 
 	// Set up OTEL environment variables from our .env variables
 	setupOTelEnv()
@@ -40,8 +50,13 @@ func main() {
 		}()
 	}
 
+	// Create game config with seed
+	cfg := game.Config{
+		Seed: seed,
+	}
+
 	// Create and run game
-	g, err := game.New()
+	g, err := game.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize game: %v", err)
 	}
@@ -49,6 +64,26 @@ func main() {
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("Game error: %v", err)
 	}
+}
+
+// determineSeed returns the seed to use for random number generation.
+// Priority: CLI flag > DUNGEONBAND_SEED env var > random (from time).
+func determineSeed(flagValue int64) int64 {
+	// CLI flag takes precedence (if non-zero)
+	if flagValue != 0 {
+		return flagValue
+	}
+
+	// Check environment variable
+	if envSeed := os.Getenv("DUNGEONBAND_SEED"); envSeed != "" {
+		if parsed, err := strconv.ParseInt(envSeed, 10, 64); err == nil {
+			return parsed
+		}
+		log.Printf("Warning: invalid DUNGEONBAND_SEED value %q, using random seed", envSeed)
+	}
+
+	// Generate random seed from time
+	return time.Now().UnixNano()
 }
 
 // setupOTelEnv configures OTEL environment variables from our custom env vars.

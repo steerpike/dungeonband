@@ -2,12 +2,13 @@ package game
 
 import (
 	"context"
+	"log"
 	"math/rand"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/samdwyer/dungeonband/data"
 	"github.com/samdwyer/dungeonband/internal/entity"
 	"github.com/samdwyer/dungeonband/internal/telemetry"
 	"github.com/samdwyer/dungeonband/internal/ui"
@@ -16,29 +17,39 @@ import (
 
 // Game holds the entire game state.
 type Game struct {
-	screen   *ui.Screen
-	renderer *ui.Renderer
-	dungeon  *world.Dungeon
-	party    *entity.Party
-	enemies  []*entity.Enemy
-	state    State
-	running  bool
-	rng      *rand.Rand
+	screen        *ui.Screen
+	renderer      *ui.Renderer
+	dungeon       *world.Dungeon
+	party         *entity.Party
+	enemies       []*entity.Enemy
+	enemyRegistry *data.EnemyRegistry
+	state         State
+	running       bool
+	rng           *rand.Rand
+	seed          int64
 }
 
-// New creates a new game instance.
-func New() (*Game, error) {
+// New creates a new game instance with the given configuration.
+func New(cfg Config) (*Game, error) {
 	screen, err := ui.NewScreen()
 	if err != nil {
 		return nil, err
 	}
 
+	// Load enemy registry from embedded data
+	registry, err := data.LoadEnemyRegistry()
+	if err != nil {
+		log.Printf("Warning: failed to load enemy registry: %v (using legacy spawning)", err)
+	}
+
 	return &Game{
-		screen:   screen,
-		renderer: ui.NewRenderer(screen),
-		state:    StateExplore,
-		running:  true,
-		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
+		screen:        screen,
+		renderer:      ui.NewRenderer(screen),
+		enemyRegistry: registry,
+		state:         StateExplore,
+		running:       true,
+		rng:           rand.New(rand.NewSource(cfg.Seed)),
+		seed:          cfg.Seed,
 	}, nil
 }
 
@@ -49,8 +60,8 @@ func (g *Game) Run(ctx context.Context) error {
 	// Initialize game (traced)
 	ctx, initSpan := tracer.Start(ctx, "game.init")
 
-	// Generate dungeon
-	g.dungeon = world.NewDungeon(world.DefaultWidth, world.DefaultHeight)
+	// Generate dungeon with the game's RNG for reproducibility
+	g.dungeon = world.NewDungeon(world.DefaultWidth, world.DefaultHeight, g.rng)
 	g.dungeon.Generate(ctx)
 
 	// Place party in first room's center
@@ -66,6 +77,7 @@ func (g *Game) Run(ctx context.Context) error {
 			attribute.Int("party.start_x", startX),
 			attribute.Int("party.start_y", startY),
 			attribute.Int("enemy_count", len(g.enemies)),
+			attribute.Int64("seed", g.seed),
 		)
 	} else {
 		// Fallback: place in center of map
@@ -74,6 +86,7 @@ func (g *Game) Run(ctx context.Context) error {
 			attribute.Int("dungeon.rooms", 0),
 			attribute.String("warning", "no rooms generated, using fallback position"),
 			attribute.Int("enemy_count", 0),
+			attribute.Int64("seed", g.seed),
 		)
 	}
 
@@ -82,7 +95,7 @@ func (g *Game) Run(ctx context.Context) error {
 	// Main game loop
 	for g.running {
 		// Render current state
-		g.renderer.Render(g.dungeon, g.party, g.enemies, ui.GameState(g.state))
+		g.renderer.Render(g.dungeon, g.party, g.enemies, ui.GameState(g.state), g.seed)
 
 		// Handle input (blocking)
 		g.handleInput(ctx)
@@ -202,25 +215,37 @@ func (g *Game) transitionState(ctx context.Context, newState State, trigger stri
 
 // spawnEnemies populates the dungeon with enemies.
 // Spawns 1-3 enemies per room, skipping room 0 (starting room).
+// Uses the enemy registry for weighted spawning if available.
 func (g *Game) spawnEnemies() {
-	enemyTypes := []entity.EnemyType{
-		entity.EnemyGoblin,
-		entity.EnemyOrc,
-		entity.EnemySkeleton,
-	}
-
 	for roomIndex := 1; roomIndex < len(g.dungeon.Rooms); roomIndex++ {
 		// 1-3 enemies per room
 		count := 1 + g.rng.Intn(3)
 
 		for i := 0; i < count; i++ {
-			// Pick random enemy type
-			enemyType := enemyTypes[g.rng.Intn(len(enemyTypes))]
-
 			// Find a random position in the room
 			x, y := g.dungeon.RandomPointInRoom(roomIndex)
 			if x >= 0 && y >= 0 {
-				enemy := entity.NewEnemy(enemyType, x, y, roomIndex)
+				var enemy *entity.Enemy
+
+				// Use registry if available, otherwise fall back to legacy spawning
+				if g.enemyRegistry != nil {
+					def := g.enemyRegistry.SpawnRandom(g.rng)
+					if def != nil {
+						enemy = entity.NewEnemyFromDef(def, x, y, roomIndex)
+					}
+				}
+
+				// Fallback to legacy spawning if registry not available or failed
+				if enemy == nil {
+					enemyTypes := []entity.EnemyType{
+						entity.EnemyGoblin,
+						entity.EnemyOrc,
+						entity.EnemySkeleton,
+					}
+					enemyType := enemyTypes[g.rng.Intn(len(enemyTypes))]
+					enemy = entity.NewEnemy(enemyType, x, y, roomIndex)
+				}
+
 				g.enemies = append(g.enemies, enemy)
 			}
 		}

@@ -31,7 +31,8 @@ type Dungeon struct {
 }
 
 // NewDungeon creates a new dungeon filled with walls.
-func NewDungeon(width, height int) *Dungeon {
+// The rng parameter is used for all random generation (BSP splits, room placement, etc.)
+func NewDungeon(width, height int, rng *rand.Rand) *Dungeon {
 	tiles := make([][]Tile, height)
 	for y := range tiles {
 		tiles[y] = make([]Tile, width)
@@ -45,7 +46,7 @@ func NewDungeon(width, height int) *Dungeon {
 		Height: height,
 		Tiles:  tiles,
 		Rooms:  make([]Room, 0),
-		rng:    rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:    rng,
 	}
 }
 
