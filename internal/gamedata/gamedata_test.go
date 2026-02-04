@@ -114,3 +114,85 @@ func TestEnemyDefMethods(t *testing.T) {
 		t.Error("TCellColor returned zero color")
 	}
 }
+
+func TestLoadAbilities(t *testing.T) {
+	abilities, err := LoadAbilities()
+	if err != nil {
+		t.Fatalf("Failed to load abilities: %v", err)
+	}
+
+	if len(abilities) < 5 {
+		t.Errorf("Expected at least 5 abilities, got %d", len(abilities))
+	}
+
+	// Verify expected abilities exist
+	expectedIDs := map[string]bool{
+		"attack":        false,
+		"defend":        false,
+		"fireball":      false,
+		"heal":          false,
+		"poison_strike": false,
+	}
+	for _, a := range abilities {
+		if _, ok := expectedIDs[a.ID]; ok {
+			expectedIDs[a.ID] = true
+		}
+	}
+
+	for id, found := range expectedIDs {
+		if !found {
+			t.Errorf("Expected ability %q not found", id)
+		}
+	}
+}
+
+func TestAbilityRegistry(t *testing.T) {
+	registry, err := LoadAbilityRegistry()
+	if err != nil {
+		t.Fatalf("Failed to load ability registry: %v", err)
+	}
+
+	if registry.Count() < 5 {
+		t.Errorf("Expected at least 5 abilities, got %d", registry.Count())
+	}
+
+	// Test GetByID
+	fireball := registry.GetByID("fireball")
+	if fireball == nil {
+		t.Fatal("Fireball not found by ID")
+	}
+	if fireball.Name != "Fireball" {
+		t.Errorf("Expected name 'Fireball', got %q", fireball.Name)
+	}
+	if fireball.EffectType != EffectDamage {
+		t.Errorf("Expected effectType 'damage', got %q", fireball.EffectType)
+	}
+	if fireball.DamageType != DamageMagical {
+		t.Errorf("Expected damageType 'magical', got %q", fireball.DamageType)
+	}
+
+	// Test GetMultiple
+	ids := []string{"attack", "heal", "nonexistent"}
+	abilities := registry.GetMultiple(ids)
+	if len(abilities) != 2 {
+		t.Errorf("Expected 2 abilities from GetMultiple, got %d", len(abilities))
+	}
+
+	// Test NeedsTarget
+	if !fireball.NeedsTarget() {
+		t.Error("Fireball should need a target")
+	}
+	defend := registry.GetByID("defend")
+	if defend.NeedsTarget() {
+		t.Error("Defend should not need a target (self-target)")
+	}
+
+	// Test IsOffensive
+	if !fireball.IsOffensive() {
+		t.Error("Fireball should be offensive")
+	}
+	heal := registry.GetByID("heal")
+	if heal.IsOffensive() {
+		t.Error("Heal should not be offensive")
+	}
+}

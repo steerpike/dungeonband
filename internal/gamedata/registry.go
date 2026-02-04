@@ -86,3 +86,73 @@ func (r *EnemyRegistry) All() []EnemyDef {
 func (r *EnemyRegistry) Count() int {
 	return len(r.enemies)
 }
+
+// =============================================================================
+// AbilityRegistry
+// =============================================================================
+
+// AbilityRegistry holds loaded ability definitions and provides lookup utilities.
+type AbilityRegistry struct {
+	abilities map[string]*AbilityDef
+	all       []AbilityDef
+}
+
+// NewAbilityRegistry creates a registry from loaded ability definitions.
+func NewAbilityRegistry(abilities []AbilityDef) *AbilityRegistry {
+	registry := &AbilityRegistry{
+		abilities: make(map[string]*AbilityDef),
+		all:       abilities,
+	}
+	for i := range abilities {
+		registry.abilities[abilities[i].ID] = &abilities[i]
+	}
+	return registry
+}
+
+// LoadAbilityRegistry loads and creates a registry from the embedded abilities.json.
+func LoadAbilityRegistry() (*AbilityRegistry, error) {
+	abilities, err := LoadAbilities()
+	if err != nil {
+		return nil, err
+	}
+	if len(abilities) == 0 {
+		return nil, errors.New("no abilities loaded from abilities.json")
+	}
+	return NewAbilityRegistry(abilities), nil
+}
+
+// MustLoadAbilityRegistry loads a registry, panicking on error.
+func MustLoadAbilityRegistry() *AbilityRegistry {
+	registry, err := LoadAbilityRegistry()
+	if err != nil {
+		panic(err)
+	}
+	return registry
+}
+
+// GetByID returns the ability definition with the given ID, or nil if not found.
+func (r *AbilityRegistry) GetByID(id string) *AbilityDef {
+	return r.abilities[id]
+}
+
+// GetMultiple returns ability definitions for a list of IDs.
+// Missing IDs are silently skipped.
+func (r *AbilityRegistry) GetMultiple(ids []string) []*AbilityDef {
+	result := make([]*AbilityDef, 0, len(ids))
+	for _, id := range ids {
+		if ability := r.abilities[id]; ability != nil {
+			result = append(result, ability)
+		}
+	}
+	return result
+}
+
+// All returns all ability definitions.
+func (r *AbilityRegistry) All() []AbilityDef {
+	return r.all
+}
+
+// Count returns the number of abilities in the registry.
+func (r *AbilityRegistry) Count() int {
+	return len(r.all)
+}

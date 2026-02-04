@@ -1,0 +1,117 @@
+{
+  "abilities": [
+    {
+      "id": "attack",
+      "name": "Attack",
+      "description": "A basic physical attack",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 5,
+      "mpCost": 0,
+      "cooldown": 0
+    },
+    {
+      "id": "defend",
+      "name": "Defend",
+      "description": "Take a defensive stance, increasing defense",
+      "effectType": "buff",
+      "targetType": "self",
+      "basePower": 0,
+      "mpCost": 0,
+      "cooldown": 0,
+      "statusEffect": "defense_up",
+      "statusDuration": 2,
+      "statusPower": 3
+    },
+    {
+      "id": "fireball",
+      "name": "Fireball",
+      "description": "Hurls a ball of fire at the enemy",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "magical",
+      "basePower": 12,
+      "mpCost": 5,
+      "cooldown": 0
+    },
+    {
+      "id": "heal",
+      "name": "Heal",
+      "description": "Restores HP to an ally",
+      "effectType": "heal",
+      "targetType": "single_ally",
+      "basePower": 10,
+      "mpCost": 4,
+      "cooldown": 0
+    },
+    {
+      "id": "poison_strike",
+      "name": "Poison Strike",
+      "description": "A venomous attack that poisons the target",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 3,
+      "mpCost": 2,
+      "cooldown": 0,
+      "statusEffect": "poison",
+      "statusDuration": 3,
+      "statusPower": 2
+    },
+    {
+      "id": "power_attack",
+      "name": "Power Attack",
+      "description": "A mighty blow with extra force",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 10,
+      "mpCost": 3,
+      "cooldown": 0
+    },
+    {
+      "id": "group_heal",
+      "name": "Group Heal",
+      "description": "Heals all allies",
+      "effectType": "heal",
+      "targetType": "all_allies",
+      "basePower": 6,
+      "mpCost": 8,
+      "cooldown": 0
+    },
+    {
+      "id": "bite",
+      "name": "Bite",
+      "description": "A vicious bite attack",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 4,
+      "mpCost": 0,
+      "cooldown": 0
+    },
+    {
+      "id": "claw",
+      "name": "Claw",
+      "description": "Slash with sharp claws",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 6,
+      "mpCost": 0,
+      "cooldown": 0
+    },
+    {
+      "id": "bone_throw",
+      "name": "Bone Throw",
+      "description": "Throws a bone at the target",
+      "effectType": "damage",
+      "targetType": "single_enemy",
+      "damageType": "physical",
+      "basePower": 5,
+      "mpCost": 0,
+      "cooldown": 0
+    }
+  ]
+}
