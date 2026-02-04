@@ -35,6 +35,7 @@ type Game struct {
 	// Combat state
 	combatEnemies     []*entity.Enemy // Enemies in the current combat encounter
 	activeMemberIndex int             // Index of the party member whose turn it is
+	combatState       *CombatState    // Full combat state for turn-based combat
 }
 
 // New creates a new game instance with the given configuration.
@@ -166,8 +167,13 @@ func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		if g.state == StateCombat {
-			// Exit combat mode
-			g.transitionState(ctx, StateExplore, "manual")
+			// If victory or defeat, always allow exit
+			if g.combatState != nil && (g.combatState.Phase == PhaseVictory || g.combatState.Phase == PhaseDefeat) {
+				g.handleCombatEnd(ctx)
+			} else {
+				// Exit combat mode (flee)
+				g.transitionState(ctx, StateExplore, "manual")
+			}
 		} else {
 			// Quit game from explore mode
 			g.running = false
@@ -195,6 +201,14 @@ func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 
 	case tcell.KeyRune:
 		r := ev.Rune()
+
+		// In combat victory/defeat, any key continues
+		if g.state == StateCombat && g.combatState != nil {
+			if g.combatState.Phase == PhaseVictory || g.combatState.Phase == PhaseDefeat {
+				g.handleCombatEnd(ctx)
+				return
+			}
+		}
 
 		// Handle number keys for ability selection in combat
 		if g.state == StateCombat && r >= '1' && r <= '9' {
@@ -231,6 +245,11 @@ func (g *Game) handleKeyEvent(ctx context.Context, ev *tcell.EventKey) {
 
 // handleCombatAbilitySelection handles when player presses a number key in combat.
 func (g *Game) handleCombatAbilitySelection(ctx context.Context, abilityIndex int) {
+	// Only handle input during player turn
+	if g.combatState == nil || g.combatState.Phase != PhasePlayerTurn {
+		return
+	}
+
 	activeMember := g.getActiveMember()
 	if activeMember == nil || g.abilityRegistry == nil {
 		return
@@ -248,24 +267,39 @@ func (g *Game) handleCombatAbilitySelection(ctx context.Context, abilityIndex in
 
 	// Check if can use (enough MP)
 	if activeMember.GetMP() < ability.MPCost {
-		return // Not enough MP
+		g.combatState.LastMessage = "Not enough MP!"
+		return
 	}
 
-	// For now, auto-target the first alive enemy for offensive abilities
-	// Target selection UI will be added in a future issue
-	if ability.IsOffensive() && len(g.combatEnemies) > 0 {
-		for _, enemy := range g.combatEnemies {
-			if enemy.IsAlive() {
-				// This is just ability selection for now
-				// Actual resolution will happen in the combat loop issue
-				_ = enemy // Placeholder - combat loop will handle this
-				break
-			}
-		}
+	// Select target based on ability type
+	var target combat.Combatant
+	if ability.IsOffensive() {
+		// Target first alive enemy
+		target = g.combatState.GetFirstAliveEnemy()
+	} else {
+		// Target self for defensive/healing abilities
+		target = activeMember
 	}
 
-	// Log the selection for now (actual combat will be implemented in dungeonband-79f)
-	// TODO: Store selected ability and trigger combat resolution
+	if target == nil {
+		return
+	}
+
+	// Execute the turn
+	g.executeCombatTurn(ctx, ability, activeMember, target)
+
+	// Check for combat end (victory)
+	if g.checkCombatEnd() {
+		return
+	}
+
+	// Advance to next party member or enemy phase
+	g.advanceToNextPartyMember()
+
+	// If it's now enemy phase, execute all enemy turns
+	if g.combatState.Phase == PhaseEnemyTurn {
+		g.executeEnemyTurns(ctx)
+	}
 }
 
 // tryMove attempts to move the party by the given delta.
@@ -302,7 +336,7 @@ func (g *Game) transitionState(ctx context.Context, newState State, trigger stri
 
 	// Handle state-specific setup
 	if newState == StateCombat {
-		g.enterCombat()
+		g.enterCombat(ctx)
 	} else if g.state == StateCombat {
 		g.exitCombat()
 	}
@@ -311,7 +345,7 @@ func (g *Game) transitionState(ctx context.Context, newState State, trigger stri
 }
 
 // enterCombat sets up combat state.
-func (g *Game) enterCombat() {
+func (g *Game) enterCombat(ctx context.Context) {
 	// Find enemies in the same room as the party
 	partyRoomIndex := g.dungeon.RoomIndexAt(g.party.X, g.party.Y)
 	g.combatEnemies = nil
@@ -321,6 +355,9 @@ func (g *Game) enterCombat() {
 		}
 	}
 	g.activeMemberIndex = 0
+
+	// Initialize full combat state with telemetry
+	g.initCombatState(ctx)
 }
 
 // exitCombat cleans up combat state.
@@ -336,7 +373,12 @@ func (g *Game) getActiveMember() *entity.Member {
 
 // buildCombatInfo creates the combat UI information for rendering.
 func (g *Game) buildCombatInfo() *ui.CombatInfo {
-	activeMember := g.getActiveMember()
+	if g.combatState == nil {
+		return nil
+	}
+
+	// Use combatState's active member index for consistency
+	activeMember := g.party.GetAliveMember(g.combatState.ActiveMemberIndex)
 	if activeMember == nil {
 		return nil
 	}
@@ -360,8 +402,8 @@ func (g *Game) buildCombatInfo() *ui.CombatInfo {
 	return &ui.CombatInfo{
 		ActiveMember: activeMember,
 		Abilities:    abilities,
-		Enemies:      g.combatEnemies,
-		Message:      "", // Can be populated with combat messages later
+		Enemies:      g.combatState.Enemies,
+		Message:      g.combatState.LastMessage,
 	}
 }
 
@@ -401,5 +443,21 @@ func (g *Game) spawnEnemies() {
 				g.enemies = append(g.enemies, enemy)
 			}
 		}
+	}
+}
+
+// handleCombatEnd processes the end of combat (victory or defeat).
+func (g *Game) handleCombatEnd(ctx context.Context) {
+	if g.combatState == nil {
+		return
+	}
+
+	if g.combatState.Phase == PhaseVictory {
+		g.endCombat(ctx, "victory")
+		g.transitionState(ctx, StateExplore, "victory")
+	} else if g.combatState.Phase == PhaseDefeat {
+		g.endCombat(ctx, "defeat")
+		// For now, just return to explore - could add game over screen later
+		g.transitionState(ctx, StateExplore, "defeat")
 	}
 }
