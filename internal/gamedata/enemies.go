@@ -4,14 +4,15 @@ import "github.com/gdamore/tcell/v2"
 
 // EnemyDef defines an enemy type loaded from JSON.
 type EnemyDef struct {
-	ID          string `json:"id"`          // Unique identifier (e.g., "goblin")
-	Name        string `json:"name"`        // Display name (e.g., "Goblin")
-	Glyph       string `json:"glyph"`       // Single character for rendering (e.g., "g")
-	Color       string `json:"color"`       // Hex color code (e.g., "#00FF00")
-	HP          int    `json:"hp"`          // Base hit points
-	Attack      int    `json:"attack"`      // Base attack power
-	Defense     int    `json:"defense"`     // Base defense value
-	SpawnWeight int    `json:"spawnWeight"` // Relative spawn frequency (higher = more common)
+	ID          string   `json:"id"`          // Unique identifier (e.g., "goblin")
+	Name        string   `json:"name"`        // Display name (e.g., "Goblin")
+	Glyph       string   `json:"glyph"`       // Single character for rendering (e.g., "g")
+	Color       string   `json:"color"`       // Hex color code (e.g., "#00FF00")
+	HP          int      `json:"hp"`          // Base hit points
+	Attack      int      `json:"attack"`      // Base attack power
+	Defense     int      `json:"defense"`     // Base defense value
+	SpawnWeight int      `json:"spawnWeight"` // Relative spawn frequency (higher = more common)
+	Abilities   []string `json:"abilities"`   // List of ability IDs this enemy can use
 }
 
 // GlyphRune returns the glyph as a rune for rendering.

@@ -156,3 +156,61 @@ func (r *AbilityRegistry) All() []AbilityDef {
 func (r *AbilityRegistry) Count() int {
 	return len(r.all)
 }
+
+// =============================================================================
+// ClassRegistry
+// =============================================================================
+
+// ClassRegistry holds loaded class definitions and provides lookup utilities.
+type ClassRegistry struct {
+	classes map[string]*ClassDef
+	all     []ClassDef
+}
+
+// NewClassRegistry creates a registry from loaded class definitions.
+func NewClassRegistry(classes []ClassDef) *ClassRegistry {
+	registry := &ClassRegistry{
+		classes: make(map[string]*ClassDef),
+		all:     classes,
+	}
+	for i := range classes {
+		registry.classes[classes[i].ID] = &classes[i]
+	}
+	return registry
+}
+
+// LoadClassRegistry loads and creates a registry from the embedded classes.json.
+func LoadClassRegistry() (*ClassRegistry, error) {
+	classes, err := LoadClasses()
+	if err != nil {
+		return nil, err
+	}
+	if len(classes) == 0 {
+		return nil, errors.New("no classes loaded from classes.json")
+	}
+	return NewClassRegistry(classes), nil
+}
+
+// MustLoadClassRegistry loads a registry, panicking on error.
+func MustLoadClassRegistry() *ClassRegistry {
+	registry, err := LoadClassRegistry()
+	if err != nil {
+		panic(err)
+	}
+	return registry
+}
+
+// GetByID returns the class definition with the given ID, or nil if not found.
+func (r *ClassRegistry) GetByID(id string) *ClassDef {
+	return r.classes[id]
+}
+
+// All returns all class definitions.
+func (r *ClassRegistry) All() []ClassDef {
+	return r.all
+}
+
+// Count returns the number of classes in the registry.
+func (r *ClassRegistry) Count() int {
+	return len(r.all)
+}

@@ -115,6 +115,56 @@ func TestEnemyDefMethods(t *testing.T) {
 	}
 }
 
+func TestEnemyAbilities(t *testing.T) {
+	enemies, err := LoadEnemies()
+	if err != nil {
+		t.Fatalf("Failed to load enemies: %v", err)
+	}
+
+	// All enemies should have at least one ability
+	for _, e := range enemies {
+		if len(e.Abilities) == 0 {
+			t.Errorf("Enemy %q has no abilities", e.ID)
+		}
+	}
+
+	// Verify specific enemies have expected abilities
+	registry, err := LoadEnemyRegistry()
+	if err != nil {
+		t.Fatalf("Failed to load enemy registry: %v", err)
+	}
+
+	goblin := registry.GetByID("goblin")
+	if goblin == nil {
+		t.Fatal("Goblin not found")
+	}
+	hasAttack := false
+	for _, a := range goblin.Abilities {
+		if a == "attack" {
+			hasAttack = true
+			break
+		}
+	}
+	if !hasAttack {
+		t.Error("Goblin should have 'attack' ability")
+	}
+
+	skeleton := registry.GetByID("skeleton")
+	if skeleton == nil {
+		t.Fatal("Skeleton not found")
+	}
+	hasBoneThrow := false
+	for _, a := range skeleton.Abilities {
+		if a == "bone_throw" {
+			hasBoneThrow = true
+			break
+		}
+	}
+	if !hasBoneThrow {
+		t.Error("Skeleton should have 'bone_throw' ability")
+	}
+}
+
 func TestLoadAbilities(t *testing.T) {
 	abilities, err := LoadAbilities()
 	if err != nil {
@@ -194,5 +244,98 @@ func TestAbilityRegistry(t *testing.T) {
 	heal := registry.GetByID("heal")
 	if heal.IsOffensive() {
 		t.Error("Heal should not be offensive")
+	}
+}
+
+func TestLoadClasses(t *testing.T) {
+	classes, err := LoadClasses()
+	if err != nil {
+		t.Fatalf("Failed to load classes: %v", err)
+	}
+
+	if len(classes) != 4 {
+		t.Errorf("Expected 4 classes, got %d", len(classes))
+	}
+
+	// Verify expected classes exist
+	expectedIDs := map[string]bool{
+		"warrior": false,
+		"rogue":   false,
+		"wizard":  false,
+		"cleric":  false,
+	}
+	for _, c := range classes {
+		if _, ok := expectedIDs[c.ID]; ok {
+			expectedIDs[c.ID] = true
+		}
+	}
+
+	for id, found := range expectedIDs {
+		if !found {
+			t.Errorf("Expected class %q not found", id)
+		}
+	}
+}
+
+func TestClassRegistry(t *testing.T) {
+	registry, err := LoadClassRegistry()
+	if err != nil {
+		t.Fatalf("Failed to load class registry: %v", err)
+	}
+
+	if registry.Count() != 4 {
+		t.Errorf("Expected 4 classes, got %d", registry.Count())
+	}
+
+	// Test GetByID
+	warrior := registry.GetByID("warrior")
+	if warrior == nil {
+		t.Fatal("Warrior not found by ID")
+	}
+	if warrior.Name != "Warrior" {
+		t.Errorf("Expected name 'Warrior', got %q", warrior.Name)
+	}
+	if warrior.HP != 30 {
+		t.Errorf("Expected HP 30, got %d", warrior.HP)
+	}
+
+	// Verify warrior has expected abilities
+	hasAttack := false
+	hasPowerAttack := false
+	for _, a := range warrior.Abilities {
+		if a == "attack" {
+			hasAttack = true
+		}
+		if a == "power_attack" {
+			hasPowerAttack = true
+		}
+	}
+	if !hasAttack {
+		t.Error("Warrior should have 'attack' ability")
+	}
+	if !hasPowerAttack {
+		t.Error("Warrior should have 'power_attack' ability")
+	}
+
+	// Test cleric has healing abilities
+	cleric := registry.GetByID("cleric")
+	if cleric == nil {
+		t.Fatal("Cleric not found by ID")
+	}
+	hasHeal := false
+	hasGroupHeal := false
+	for _, a := range cleric.Abilities {
+		if a == "heal" {
+			hasHeal = true
+		}
+		if a == "group_heal" {
+			hasGroupHeal = true
+		}
+	}
+	if !hasHeal {
+		t.Error("Cleric should have 'heal' ability")
+	}
+	if !hasGroupHeal {
+		t.Error("Cleric should have 'group_heal' ability")
 	}
 }

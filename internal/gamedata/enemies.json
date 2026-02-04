@@ -8,7 +8,8 @@
       "hp": 8,
       "attack": 2,
       "defense": 1,
-      "spawnWeight": 50
+      "spawnWeight": 50,
+      "abilities": ["attack", "defend"]
     },
     {
       "id": "orc",
@@ -18,7 +19,8 @@
       "hp": 15,
       "attack": 4,
       "defense": 2,
-      "spawnWeight": 30
+      "spawnWeight": 30,
+      "abilities": ["attack", "power_attack", "defend"]
     },
     {
       "id": "skeleton",
@@ -28,7 +30,8 @@
       "hp": 10,
       "attack": 3,
       "defense": 1,
-      "spawnWeight": 20
+      "spawnWeight": 20,
+      "abilities": ["attack", "bone_throw"]
     }
   ]
 }
