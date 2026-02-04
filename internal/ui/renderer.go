@@ -26,8 +26,11 @@ func NewRenderer(screen *Screen) *Renderer {
 }
 
 // Render draws the dungeon and party to the screen based on game state.
-func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, state GameState) {
+func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, enemies []*entity.Enemy, state GameState) {
 	r.screen.Clear()
+
+	// Determine which room the party is in (for visibility)
+	partyRoomIndex := dungeon.RoomIndexAt(party.X, party.Y)
 
 	// Draw dungeon tiles
 	for y := 0; y < dungeon.Height; y++ {
@@ -37,6 +40,9 @@ func (r *Renderer) Render(dungeon *world.Dungeon, party *entity.Party, state Gam
 			r.screen.SetContent(x, y, tile.Rune(), style)
 		}
 	}
+
+	// Draw enemies (only those in the same room as party)
+	r.renderEnemies(enemies, partyRoomIndex)
 
 	// Draw party based on state
 	if state == StateCombat {
@@ -198,5 +204,31 @@ func (r *Renderer) RenderMessage(msg string, y int) {
 	style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 	for i, ch := range msg {
 		r.screen.SetContent(i, y, ch, style)
+	}
+}
+
+// renderEnemies draws enemies that are visible to the party.
+// Only enemies in the same room as the party are rendered.
+func (r *Renderer) renderEnemies(enemies []*entity.Enemy, partyRoomIndex int) {
+	for _, enemy := range enemies {
+		// Only show enemies in the same room as the party
+		if enemy.RoomIndex == partyRoomIndex && partyRoomIndex >= 0 {
+			style := r.getEnemyStyle(enemy.Type)
+			r.screen.SetContent(enemy.X, enemy.Y, enemy.Symbol, style)
+		}
+	}
+}
+
+// getEnemyStyle returns the style for an enemy based on type.
+func (r *Renderer) getEnemyStyle(enemyType entity.EnemyType) tcell.Style {
+	switch enemyType {
+	case entity.EnemyGoblin:
+		return tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	case entity.EnemyOrc:
+		return tcell.StyleDefault.Foreground(tcell.ColorRed)
+	case entity.EnemySkeleton:
+		return tcell.StyleDefault.Foreground(tcell.ColorWhite)
+	default:
+		return tcell.StyleDefault.Foreground(tcell.ColorPurple)
 	}
 }

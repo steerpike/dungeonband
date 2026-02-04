@@ -2,6 +2,8 @@ package game
 
 import (
 	"context"
+	"math/rand"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,8 +20,10 @@ type Game struct {
 	renderer *ui.Renderer
 	dungeon  *world.Dungeon
 	party    *entity.Party
+	enemies  []*entity.Enemy
 	state    State
 	running  bool
+	rng      *rand.Rand
 }
 
 // New creates a new game instance.
@@ -34,6 +38,7 @@ func New() (*Game, error) {
 		renderer: ui.NewRenderer(screen),
 		state:    StateExplore,
 		running:  true,
+		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
 }
 
@@ -53,10 +58,14 @@ func (g *Game) Run(ctx context.Context) error {
 		startX, startY := g.dungeon.Rooms[0].Center()
 		g.party = entity.NewParty(startX, startY)
 
+		// Spawn enemies in rooms (skip room 0 - starting room)
+		g.spawnEnemies()
+
 		initSpan.SetAttributes(
 			attribute.Int("dungeon.rooms", len(g.dungeon.Rooms)),
 			attribute.Int("party.start_x", startX),
 			attribute.Int("party.start_y", startY),
+			attribute.Int("enemy_count", len(g.enemies)),
 		)
 	} else {
 		// Fallback: place in center of map
@@ -64,6 +73,7 @@ func (g *Game) Run(ctx context.Context) error {
 		initSpan.SetAttributes(
 			attribute.Int("dungeon.rooms", 0),
 			attribute.String("warning", "no rooms generated, using fallback position"),
+			attribute.Int("enemy_count", 0),
 		)
 	}
 
@@ -72,7 +82,7 @@ func (g *Game) Run(ctx context.Context) error {
 	// Main game loop
 	for g.running {
 		// Render current state
-		g.renderer.Render(g.dungeon, g.party, ui.GameState(g.state))
+		g.renderer.Render(g.dungeon, g.party, g.enemies, ui.GameState(g.state))
 
 		// Handle input (blocking)
 		g.handleInput(ctx)
@@ -188,4 +198,31 @@ func (g *Game) transitionState(ctx context.Context, newState State, trigger stri
 	span.End()
 
 	g.state = newState
+}
+
+// spawnEnemies populates the dungeon with enemies.
+// Spawns 1-3 enemies per room, skipping room 0 (starting room).
+func (g *Game) spawnEnemies() {
+	enemyTypes := []entity.EnemyType{
+		entity.EnemyGoblin,
+		entity.EnemyOrc,
+		entity.EnemySkeleton,
+	}
+
+	for roomIndex := 1; roomIndex < len(g.dungeon.Rooms); roomIndex++ {
+		// 1-3 enemies per room
+		count := 1 + g.rng.Intn(3)
+
+		for i := 0; i < count; i++ {
+			// Pick random enemy type
+			enemyType := enemyTypes[g.rng.Intn(len(enemyTypes))]
+
+			// Find a random position in the room
+			x, y := g.dungeon.RandomPointInRoom(roomIndex)
+			if x >= 0 && y >= 0 {
+				enemy := entity.NewEnemy(enemyType, x, y, roomIndex)
+				g.enemies = append(g.enemies, enemy)
+			}
+		}
+	}
 }

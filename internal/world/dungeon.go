@@ -99,6 +99,36 @@ func (d *Dungeon) GetTile(x, y int) Tile {
 	return d.Tiles[y][x]
 }
 
+// RoomIndexAt returns the index of the room containing the position, or -1 if not in a room.
+func (d *Dungeon) RoomIndexAt(x, y int) int {
+	for i, room := range d.Rooms {
+		if room.Contains(x, y) {
+			return i
+		}
+	}
+	return -1
+}
+
+// RandomPointInRoom returns a random passable point within the specified room.
+func (d *Dungeon) RandomPointInRoom(roomIndex int) (int, int) {
+	if roomIndex < 0 || roomIndex >= len(d.Rooms) {
+		return -1, -1
+	}
+	room := d.Rooms[roomIndex]
+
+	// Try random points until we find a passable one (max 100 attempts)
+	for i := 0; i < 100; i++ {
+		x := room.X + d.rng.Intn(room.Width)
+		y := room.Y + d.rng.Intn(room.Height)
+		if d.IsPassable(x, y) {
+			return x, y
+		}
+	}
+
+	// Fallback to room center
+	return room.Center()
+}
+
 // bspNode represents a node in the BSP tree.
 type bspNode struct {
 	x, y          int
